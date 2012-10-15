@@ -29,11 +29,11 @@
 
 @implementation IIIAsync
 
-@synthesize dispatchQueue;
+@synthesize dispatchQueue = _dispatchQueue;
 
 -(id)initWithDispatchQueue:(dispatch_queue_t)queue{
 	if((self = [super init])){
-		dispatchQueue = queue;
+		_dispatchQueue = queue;
 	}
 	return self;
 }
@@ -68,21 +68,21 @@
 }
 
 -(void)iterateSerially:(NSArray *)items withIterator:(IIIAsyncIterator)iterator callback:(IIIAsyncCallback)callback{
-	dispatch_async(dispatchQueue, ^{
+	dispatch_async(_dispatchQueue, ^{
 		__block NSUInteger index = 0;
 		
 		__block dispatch_block_t callNext;
 		__block dispatch_block_t continueOrCallback;
 		
-		NSMutableArray *returnValues = [NSMutableArray array];
-		while(returnValues.count < items.count){
+		NSMutableArray *returnValues = [NSMutableArray arrayWithCapacity:items.count];
+		while (returnValues.count < items.count) {
 			[returnValues addObject:[NSNull null]];
 		}
 		
-		continueOrCallback= ^{
-			if(++index < items.count){
+		continueOrCallback = ^{
+			if (++index < items.count) {
 				callNext();
-			}else{
+			} else {
 				callback([returnValues copy], nil);
 			}
 			
@@ -92,34 +92,34 @@
 			id object = [items objectAtIndex:index];
 			
 			iterator(object, index, ^(id result, NSError *error){
-				if(error){
+				if (error) {
 					callback(nil, error);
 				}
 				
-				if(result){
+				if (result) {
 					[returnValues replaceObjectAtIndex:index withObject:result];
 				}
 				
-				dispatch_async(dispatchQueue, continueOrCallback);
+				dispatch_async(_dispatchQueue, continueOrCallback);
 			});
 		};
-		dispatch_async(dispatchQueue, callNext);
+		dispatch_async(_dispatchQueue, callNext);
 	});
 }
 
 -(void)iterateParallel:(NSArray *)items withIterator:(IIIAsyncIterator)iterator callback:(IIIAsyncCallback)callback{
-	dispatch_async(dispatchQueue, ^{
+	dispatch_async(_dispatchQueue, ^{
 		__block BOOL finish = NO;
 		__block NSInteger count = items.count;
 		
 		NSMutableArray *returnValues = [NSMutableArray arrayWithCapacity:items.count];
-		while(returnValues.count < items.count){
+		while (returnValues.count < items.count) {
 			[returnValues addObject:[NSNull null]];
 		}
 		
 		dispatch_block_t (^blockForItemAtIndex)(NSUInteger index, IIIAsyncCallback callback) = ^(NSUInteger index, IIIAsyncCallback callback){
 			return ^{
-				if(finish) return;
+				if (finish) return;
 				
 				id item = [items objectAtIndex:index];
 				iterator(item, index, callback);
@@ -128,19 +128,19 @@
 		
 		IIIAsyncCallback (^itemCallbackForIndex)(NSUInteger index) = ^(NSUInteger index){
 			return ^(id result, NSError *error){
-				if(finish) return;
+				if (finish) return;
 				
-				if(error){
-					dispatch_async(dispatchQueue, ^{
+				if (error) {
+					dispatch_async(_dispatchQueue, ^{
 						callback(nil, error);
 					});
 					return;
 				}
 				
-				if(result)
+				if (result)
 					[returnValues replaceObjectAtIndex:index withObject:result];
 				
-				if(--count == 0){
+				if (--count == 0) {
 					finish = YES;
 					callback(returnValues, nil);
 				}
@@ -148,16 +148,16 @@
 		};
 		
 		for(NSUInteger index = 0; index < items.count; index++){
-			dispatch_async(dispatchQueue, blockForItemAtIndex(index, itemCallbackForIndex(index)));
+			dispatch_async(_dispatchQueue, blockForItemAtIndex(index, itemCallbackForIndex(index)));
 		}
 	});
 }
 
 -(void)runSeries:(NSArray *)tasks callback:(IIIAsyncCallback)callback{
-	dispatch_async(dispatchQueue, ^{
+	dispatch_async(_dispatchQueue, ^{
 		[self iterateSerially:tasks withIterator:^(id object, NSUInteger index, IIIAsyncCallback callback) {
 			IIIAsyncBlock block = (IIIAsyncBlock)object;
-			dispatch_async(dispatchQueue, ^{
+			dispatch_async(_dispatchQueue, ^{
 				block(callback);
 			});
 		} callback:callback];
@@ -165,7 +165,7 @@
 }
 
 -(void)runParallel:(NSArray *)blocks callback:(IIIAsyncCallback)callback{
-	dispatch_async(dispatchQueue, ^{
+	dispatch_async(_dispatchQueue, ^{
 		[self iterateParallel:blocks withIterator:^(id object, NSUInteger index, IIIAsyncCallback callback) {
 			IIIAsyncBlock block = (IIIAsyncBlock)object;
 			block(callback);
@@ -183,13 +183,13 @@
 
 -(void)runConditional:(IIIAsyncConditional)condition whileConditionalIs:(BOOL)whileValue performBlock:(IIIAsyncBlock)block callback:(IIIAsyncCallback)callback{
 	dispatch_block_t __block nextStep = ^{
-		dispatch_async(dispatchQueue, ^{
+		dispatch_async(_dispatchQueue, ^{
 			BOOL result = condition();
-			if(result == whileValue){
+			if (result == whileValue) {
 				block(^(id result, NSError *error){
 					nextStep();
 				});
-			}else{
+			} else {
 				callback(nil, nil);
 			}
 		});
